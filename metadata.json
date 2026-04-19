@@ -1,6 +1,6 @@
 {
-  "name": "RoktoBondhon",
-  "description": "A comprehensive Blood Donation ecosystem for Bangladesh, featuring a mobile app for donors/requesters and an admin panel for blood banks and app administrators.",
+  "name": "BloodConnect",
+  "description": "A comprehensive Blood Donation ecosystem, featuring a mobile app for donors/requesters and an admin panel for blood banks and app administrators.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["Firebase", "Google Maps", "Gemini AI", "FCM"]
 }

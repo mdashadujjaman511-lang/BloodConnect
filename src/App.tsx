@@ -506,7 +506,7 @@ function TopNav({ t, language, activeTab, setActiveTab, user, unreadCount }: { t
             <Heart className="text-white w-6 h-6 fill-white/80" />
           </div>
           <span className="text-2xl font-bold tracking-tight">
-            {language === 'Bangla' ? 'রক্তবন্ধন' : 'RoktoBondhon'}
+            {language === 'Bangla' ? 'ব্লাডকানেক্ট' : 'BloodConnect'}
           </span>
         </div>
 
