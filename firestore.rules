@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, name, email, phone, bloodGroup, dob, gender, weight, location, photoURL, medicalHistory, lastDonationDate, totalDonations, isAvailable, role, createdAt
+    //
+    // Collection: requests
+    // Fields: requestId, requesterUid, patientName, bloodGroup, bagsNeeded, hospitalName, urgency, status, createdAt
+    //
+    // Collection: campaigns
+    // Fields: title, location, date, description, photoURL, donationLink, createdBy, createdAt, status
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "mdashadujjaman511@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 15 &&
+             data.bloodGroup in ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] &&
+             data.location is map &&
+             data.location.division is string &&
+             data.location.district is string &&
+             data.location.area is string;
+    }
+
+    function isValidPost(data) {
+      return data.authorUid == request.auth.uid &&
+             data.authorName is string && data.authorName.size() > 0 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             (!('imageURL' in data) || (data.imageURL is string && (data.imageURL.matches("^https://.*") || data.imageURL.matches("^http://.*"))));
+    }
+
+    // User Rules
+    match /users/{userId} {
+      // Allow authenticated users to read profiles (to find donors)
+      // But ensure PII like email/phone is protected if needed. 
+      // For this app, we'll allow reading but restrict writing.
+      allow read: if isAuthenticated();
+      
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      request.resource.data.role == 'donor';
+      
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                      (request.resource.data.role == resource.data.role || isAdmin());
+      
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Blood Request Rules
+    match /requests/{requestId} {
+      allow read: if true; 
+      allow create: if isAuthenticated() && request.resource.data.requesterUid == request.auth.uid;
+      allow update: if isAuthenticated() && 
+        (resource.data.requesterUid == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Direct Request Rules
+    match /direct_requests/{requestId} {
+      allow read: if isAuthenticated() && 
+        (resource.data.donorId == request.auth.uid || resource.data.requesterId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.requesterId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+        (resource.data.donorId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && 
+        (resource.data.donorId == request.auth.uid || resource.data.requesterId == request.auth.uid || isAdmin());
+    }
+
+    // Donation Stories Rules
+    match /donation_stories/{storyId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.donorUid == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.donorUid == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.donorUid == request.auth.uid || isAdmin());
+    }
+
+    // Connection Test Rules
+    match /_connection_test_/{docId} {
+      allow read: if true;
+    }
+
+    // Post Rules
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPost(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.authorUid == request.auth.uid && isValidPost(request.resource.data)) ||
+        // Allow anyone to update ONLY the likes array (to like/unlike)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']))
+      );
+      allow delete: if isAuthenticated() && (resource.data.authorUid == request.auth.uid || isAdmin());
+    }
+
+    // Notification Rules
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.recipientUid == request.auth.uid;
+      allow create: if isAuthenticated(); 
+      allow update: if isAuthenticated() && resource.data.recipientUid == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.recipientUid == request.auth.uid;
+    }
+
+    // Campaign Rules
+    match /campaigns/{campaignId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

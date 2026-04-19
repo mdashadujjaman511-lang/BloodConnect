@@ -1,0 +1,127 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the RoktoBondhon platform.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"] },
+        "dob": { "type": "string", "format": "date" },
+        "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+        "weight": { "type": "number" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "division": { "type": "string" },
+            "district": { "type": "string" },
+            "area": { "type": "string" }
+          }
+        },
+        "photoURL": { "type": "string" },
+        "medicalHistory": {
+          "type": "object",
+          "properties": {
+            "diseases": { "type": "string" },
+            "medications": { "type": "string" }
+          }
+        },
+        "lastDonationDate": { "type": "string", "format": "date-time" },
+        "totalDonations": { "type": "integer" },
+        "isAvailable": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["donor", "admin", "bank_admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "bloodGroup", "phone", "location"]
+    },
+    "BloodRequest": {
+      "title": "Blood Request",
+      "description": "A request for blood donation.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "requesterUid": { "type": "string" },
+        "patientName": { "type": "string" },
+        "bloodGroup": { "type": "string" },
+        "bagsNeeded": { "type": "integer" },
+        "hospitalName": { "type": "string" },
+        "urgency": { "type": "string", "enum": ["Normal", "Urgent", "Critical"] },
+        "status": { "type": "string", "enum": ["Pending", "In Progress", "Fulfilled", "Expired"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requesterUid", "bloodGroup", "bagsNeeded", "hospitalName", "urgency"]
+    },
+    "DirectRequest": {
+      "title": "Direct Request",
+      "description": "A direct request sent to a specific donor.",
+      "type": "object",
+      "properties": {
+        "donorId": { "type": "string" },
+        "requesterId": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["donorId", "requesterId", "message"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "A community feed post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "imageURL": { "type": "string" },
+        "likes": { "type": "array", "items": { "type": "string" } },
+        "commentsCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "authorName", "content"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for a user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["request", "campaign", "post_like", "general"] },
+        "relatedId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientUid", "title", "body", "type"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/requests/{requestId}": {
+      "schema": "BloodRequest",
+      "description": "Blood donation requests"
+    },
+    "/direct_requests/{requestId}": {
+      "schema": "DirectRequest",
+      "description": "Direct requests to donors"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Community feed posts"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    }
+  }
+}

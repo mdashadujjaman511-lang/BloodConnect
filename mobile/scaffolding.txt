@@ -1,0 +1,77 @@
+// RoktoBondhon Mobile - Flutter Scaffolding
+// This is a conceptual structure for the Flutter app.
+
+/*
+lib/
+  ├── main.dart
+  ├── app.dart
+  ├── core/
+  │   ├── constants/
+  │   ├── theme/
+  │   ├── utils/
+  │   └── widgets/
+  ├── data/
+  │   ├── models/
+  │   │   ├── user_model.dart
+  │   │   ├── request_model.dart
+  │   │   └── blood_bank_model.dart
+  │   ├── repositories/
+  │   │   ├── auth_repository.dart
+  │   │   ├── donor_repository.dart
+  │   │   └── request_repository.dart
+  │   └── providers/
+  │       └── firebase_provider.dart
+  ├── logic/
+  │   ├── auth/
+  │   ├── donor_search/
+  │   ├── blood_request/
+  │   └── chatbot/
+  └── presentation/
+      ├── screens/
+      │   ├── auth/
+      │   ├── home/
+      │   ├── profile/
+      │   ├── request_form/
+      │   ├── donor_search/
+      │   └── chatbot/
+      └── widgets/
+*/
+
+// Example: user_model.dart
+class UserModel {
+  final String uid;
+  final String name;
+  final String bloodGroup;
+  final String district;
+  final String area;
+  final DateTime? lastDonationDate;
+  final bool isAvailable;
+  final double lat;
+  final double lng;
+
+  UserModel({
+    required this.uid,
+    required this.name,
+    required this.bloodGroup,
+    required this.district,
+    required this.area,
+    this.lastDonationDate,
+    required this.isAvailable,
+    required this.lat,
+    required this.lng,
+  });
+
+  factory UserModel.fromMap(Map<String, dynamic> data) {
+    return UserModel(
+      uid: data['uid'],
+      name: data['name'],
+      bloodGroup: data['bloodGroup'],
+      district: data['district'],
+      area: data['area'],
+      lastDonationDate: data['lastDonationDate']?.toDate(),
+      isAvailable: data['isAvailable'] ?? false,
+      lat: data['lat'] ?? 0.0,
+      lng: data['lng'] ?? 0.0,
+    );
+  }
+}
