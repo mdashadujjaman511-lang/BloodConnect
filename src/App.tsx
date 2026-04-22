@@ -82,7 +82,7 @@ import {
 } from '@react-google-maps/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, where, addDoc, serverTimestamp, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, where, addDoc, serverTimestamp, deleteDoc, getDocs, getDoc } from 'firebase/firestore';
 
 // Mock Data
 const stats = [
@@ -1021,10 +1021,10 @@ export default function App() {
           {activeTab === 'community' && <CommunityFeedView t={t} onNewPost={() => setShowPostModal(true)} isAdmin={isAdmin} />}
           {activeTab === 'about' && <AboutUsView t={t} />}
           {activeTab === 'map' && <MapView t={t} language={language} />}
-          {activeTab === 'profile' && <ProfileView userData={profileUid === user.uid ? userData : null} userId={profileUid || user.uid} t={t} language={language} />}
+          {activeTab === 'profile' && <ProfileView userData={profileUid === user.uid ? userData : null} userId={profileUid || user.uid} t={t} language={language} isAdmin={isAdmin} />}
           {activeTab === 'donors' && <DonorsView t={t} searchQuery={searchQuery} userData={userData} />}
           {activeTab === 'requests' && <RequestsView t={t} searchQuery={searchQuery} onCreateRequest={() => setShowRequestModal(true)} />}
-          {activeTab === 'notifications' && <NotificationsView t={t} setActiveTab={setActiveTab} />}
+          {activeTab === 'notifications' && <NotificationsView t={t} setActiveTab={setActiveTab} setProfileUid={setProfileUid} />}
           {activeTab === 'leaderboard' && <LeaderboardView t={t} />}
           {activeTab === 'banks' && <BloodBanksView t={t} searchQuery={searchQuery} />}
           {activeTab === 'ai' && <AIView t={t} />}
@@ -1615,7 +1615,7 @@ function RegistrationView({ onComplete, t }: { onComplete: () => void, t: any })
   );
 }
 
-function ProfileView({ userData, userId, t, language }: { userData: any, userId: string, t: any, language: string }) {
+function ProfileView({ userData, userId, t, language, isAdmin }: { userData: any, userId: string, t: any, language: string, isAdmin: boolean }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(userData);
   const [loading, setLoading] = useState(!userData);
@@ -1645,7 +1645,7 @@ function ProfileView({ userData, userId, t, language }: { userData: any, userId:
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      alert("Image is too large. Max size is 2MB.");
+      alert("আপনার ইমেজ সাইজটি ২ মেগাবাইটের বেশি। দয়া করে ২ মেগাবাইটের কম সাইজের ছোট ইমেজ আপলোড করুন।");
       return;
     }
 
@@ -1657,9 +1657,21 @@ function ProfileView({ userData, userId, t, language }: { userData: any, userId:
       setEditData(prev => ({...prev, photoURL: url}));
     } catch (err) {
       console.error("Error uploading image: ", err);
-      alert("Failed to upload image.");
+      alert("ছবিটি আপলোড হতে সমস্যা হয়েছে। ইন্টারনেট সংযোগ চেক করে আবার চেষ্টা করুন।");
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleRateDonor = async (rating: number) => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'users', userId), { rating });
+      setData(prev => ({...prev, rating }));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'users');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1674,8 +1686,16 @@ function ProfileView({ userData, userId, t, language }: { userData: any, userId:
         dob: editData.dob,
         gender: editData.gender,
         weight: Number(editData.weight),
-        location: editData.location,
+        location: {
+          ...editData.location,
+          latitude: editData.location?.latitude ? Number(editData.location.latitude) : null,
+          longitude: editData.location?.longitude ? Number(editData.location.longitude) : null
+        },
         medicalHistory: editData.medicalHistory,
+        socialLinks: {
+          facebook: editData.socialLinks?.facebook || '',
+          whatsapp: editData.socialLinks?.whatsapp || ''
+        },
         photoURL: editData.photoURL,
         totalDonations: editData.totalDonations,
         lastDonationDate: editData.lastDonationDate
@@ -1785,6 +1805,23 @@ function ProfileView({ userData, userId, t, language }: { userData: any, userId:
               <h3 className="text-xl font-bold">{data.name}</h3>
             )}
             <p className="text-text-secondary text-sm">{data.email}</p>
+            {/* Rating Display */}
+            <div className="mt-2 flex items-center justify-center gap-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => isAdmin && handleRateDonor(star)}
+                  className={cn(
+                    "text-xl transition-all",
+                    star <= (data.rating || 0) ? "text-yellow-400" : "text-gray-600",
+                    isAdmin ? "cursor-pointer hover:scale-110" : "cursor-default"
+                  )}
+                >
+                  ★
+                </button>
+              ))}
+              {isAdmin && <span className="text-xs text-text-secondary ml-2">(Admin Only)</span>}
+            </div>
           </div>
           <div className="flex justify-center gap-4">
             <div className="px-4 py-2 bg-blood-red/10 border border-blood-red/20 rounded-xl">
@@ -1897,9 +1934,49 @@ function ProfileView({ userData, userId, t, language }: { userData: any, userId:
               <InfoItem icon={MapPin} label={t.division} value={isEditing ? (editData.location?.division || '') : (data.location?.division || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), division: v}})} />
               <InfoItem icon={MapPin} label={t.district} value={isEditing ? (editData.location?.district || '') : (data.location?.district || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), district: v}})} />
               <InfoItem icon={MapPin} label={t.area} value={isEditing ? (editData.location?.area || '') : (data.location?.area || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), area: v}})} />
+              <InfoItem icon={MapPin} label={language === 'Bangla' ? 'অক্ষাংশ (Latitude)' : 'Latitude'} value={isEditing ? (editData.location?.latitude || '') : (data.location?.latitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), latitude: v}})} type="number" />
+              <InfoItem icon={MapPin} label={language === 'Bangla' ? 'দ্রাঘিমাংশ (Longitude)' : 'Longitude'} value={isEditing ? (editData.location?.longitude || '') : (data.location?.longitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), longitude: v}})} type="number" />
             </div>
 
             <div className="pt-8 border-t border-glass-border space-y-6">
+              {/* Social Links Section */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-blood-red">
+                  <h4 className="font-bold">Social Links</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <p className="text-xs text-text-secondary uppercase">Facebook Profile URL</p>
+                    {isEditing ? (
+                      <input 
+                        type="url"
+                        value={editData.socialLinks?.facebook || ''}
+                        onChange={(e) => setEditData({...editData, socialLinks: {...(editData.socialLinks || {}), facebook: e.target.value}})}
+                        className="w-full bg-white/5 border border-glass-border rounded-xl p-3 text-sm outline-none focus:ring-1 focus:ring-blood-red"
+                        placeholder="https://facebook.com/..."
+                      />
+                    ) : (
+                      <a href={data.socialLinks?.facebook} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline">{data.socialLinks?.facebook || 'Not added'}</a>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-text-secondary uppercase">WhatsApp Number</p>
+                    {isEditing ? (
+                      <input 
+                        type="tel"
+                        value={editData.socialLinks?.whatsapp || ''}
+                        onChange={(e) => setEditData({...editData, socialLinks: {...(editData.socialLinks || {}), whatsapp: e.target.value}})}
+                        className="w-full bg-white/5 border border-glass-border rounded-xl p-3 text-sm outline-none focus:ring-1 focus:ring-blood-red"
+                        placeholder="+880..."
+                      />
+                    ) : (
+                      <p className="text-sm">{data.socialLinks?.whatsapp || 'Not added'}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Medical History Section */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-blood-red">
                   <Stethoscope className="w-5 h-5" />
@@ -2102,7 +2179,12 @@ function ReceivedRequestsList({ userId, t }: { userId: string, t: any }) {
             <button 
               onClick={async () => {
                 if (confirm('Are you sure you want to delete this request?')) {
-                  await deleteDoc(doc(db, 'direct_requests', req.id));
+                  try {
+                    await deleteDoc(doc(db, 'direct_requests', req.id));
+                  } catch (err) {
+                    console.error("Error deleting request:", err);
+                    alert("Failed to delete request. Please try again.");
+                  }
                 }
               }}
               className="p-2 rounded-full hover:bg-red-500/10 text-red-500 transition-all opacity-0 group-hover:opacity-100"
@@ -4469,7 +4551,7 @@ function InfoItem({ icon: Icon, label, value, isEditing, onChange, type = "text"
   );
 }
 
-function NotificationsView({ t, setActiveTab }: { t: any, setActiveTab: (tab: string) => void }) {
+function NotificationsView({ t, setActiveTab, setProfileUid }: { t: any, setActiveTab: (tab: string) => void, setProfileUid: (uid: string | null) => void }) {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -4564,7 +4646,13 @@ function NotificationsView({ t, setActiveTab }: { t: any, setActiveTab: (tab: st
                   )}
                   {n.type === 'request' && n.relatedId && (
                     <button 
-                      onClick={() => setActiveTab('profile')}
+                      onClick={async () => {
+                        const reqDoc = await getDoc(doc(db, 'direct_requests', n.relatedId));
+                        if(reqDoc.exists()) {
+                            setProfileUid(reqDoc.data().requesterId);
+                            setActiveTab('profile');
+                        }
+                      }}
                       className="text-[10px] font-bold text-blue-400 uppercase tracking-wider hover:underline"
                     >
                       View Request
