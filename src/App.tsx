@@ -71,15 +71,17 @@ import {
 import { cn } from './lib/utils';
 import { auth, db, storage, signInWithGoogle, handleFirestoreError, OperationType, loginWithEmail, signUpWithEmail, updateUserProfile } from './services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { 
-  GoogleMap, 
-  useJsApiLoader, 
-  Marker, 
-  InfoWindow, 
-  Circle,
-  DirectionsRenderer,
-  OverlayView
-} from '@react-google-maps/api';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix Leaflet's default icon path issues
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, where, addDoc, serverTimestamp, deleteDoc, getDocs, getDoc } from 'firebase/firestore';
@@ -1367,7 +1369,9 @@ function RegistrationView({ onComplete, t }: { onComplete: () => void, t: any })
     area: '',
     diseases: '',
     medications: '',
-    photoURL: auth.currentUser?.photoURL || ''
+    photoURL: auth.currentUser?.photoURL || '',
+    latitude: '',
+    longitude: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1389,7 +1393,9 @@ function RegistrationView({ onComplete, t }: { onComplete: () => void, t: any })
         location: {
           division: formData.division,
           district: formData.district,
-          area: formData.area
+          area: formData.area,
+          latitude: formData.latitude ? Number(formData.latitude) : null,
+          longitude: formData.longitude ? Number(formData.longitude) : null
         },
         medicalHistory: {
           diseases: formData.diseases,
@@ -1550,6 +1556,47 @@ function RegistrationView({ onComplete, t }: { onComplete: () => void, t: any })
                     className="w-full px-4 py-3 bg-white/5 border border-glass-border rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blood-red"
                     placeholder="e.g. Mirpur-10"
                   />
+                </div>
+                <div className="md:col-span-2 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-text-secondary ml-1 uppercase">
+                      Exact Location (Lat/Lng)
+                    </label>
+                    <button 
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                            setFormData({
+                              ...formData,
+                              latitude: pos.coords.latitude.toString(),
+                              longitude: pos.coords.longitude.toString()
+                            });
+                          });
+                        }
+                      }}
+                      className="text-xs text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <Locate className="w-3 h-3" /> Get Current Location
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input 
+                      type="number" 
+                      value={formData.latitude}
+                      onChange={(e) => setFormData({...formData, latitude: e.target.value})}
+                      className="w-full px-4 py-3 bg-white/5 border border-glass-border rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blood-red"
+                      placeholder="Latitude"
+                      step="any"
+                    />
+                    <input 
+                      type="number" 
+                      value={formData.longitude}
+                      onChange={(e) => setFormData({...formData, longitude: e.target.value})}
+                      className="w-full px-4 py-3 bg-white/5 border border-glass-border rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blood-red"
+                      placeholder="Longitude"
+                      step="any"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex justify-between pt-4">
@@ -1934,8 +1981,36 @@ function ProfileView({ userData, userId, t, language, isAdmin }: { userData: any
               <InfoItem icon={MapPin} label={t.division} value={isEditing ? (editData.location?.division || '') : (data.location?.division || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), division: v}})} />
               <InfoItem icon={MapPin} label={t.district} value={isEditing ? (editData.location?.district || '') : (data.location?.district || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), district: v}})} />
               <InfoItem icon={MapPin} label={t.area} value={isEditing ? (editData.location?.area || '') : (data.location?.area || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), area: v}})} />
-              <InfoItem icon={MapPin} label={language === 'Bangla' ? 'অক্ষাংশ (Latitude)' : 'Latitude'} value={isEditing ? (editData.location?.latitude || '') : (data.location?.latitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), latitude: v}})} type="number" />
-              <InfoItem icon={MapPin} label={language === 'Bangla' ? 'দ্রাঘিমাংশ (Longitude)' : 'Longitude'} value={isEditing ? (editData.location?.longitude || '') : (data.location?.longitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), longitude: v}})} type="number" />
+              <div className="md:col-span-2 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-text-secondary uppercase">Exact Location (Map)</h4>
+                  {isEditing && (
+                    <button 
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition((pos) => {
+                            setEditData({
+                              ...editData,
+                              location: {
+                                ...(editData.location || {}),
+                                latitude: pos.coords.latitude.toString(),
+                                longitude: pos.coords.longitude.toString()
+                              }
+                            });
+                          });
+                        }
+                      }}
+                      className="text-xs text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <Locate className="w-3 h-3" /> Get Current Location
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <InfoItem icon={MapPin} label={language === 'Bangla' ? 'অক্ষাংশ (Latitude)' : 'Latitude'} value={isEditing ? (editData.location?.latitude || '') : (data.location?.latitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), latitude: v}})} type="number" />
+                  <InfoItem icon={MapPin} label={language === 'Bangla' ? 'দ্রাঘিমাংশ (Longitude)' : 'Longitude'} value={isEditing ? (editData.location?.longitude || '') : (data.location?.longitude || '')} isEditing={isEditing} onChange={(v) => setEditData({...editData, location: {...(editData.location || {}), longitude: v}})} type="number" />
+                </div>
+              </div>
             </div>
 
             <div className="pt-8 border-t border-glass-border space-y-6">
@@ -2272,7 +2347,7 @@ function DonorsView({ t, searchQuery: globalSearchQuery, userData }: { t: any, s
       donor.location?.district?.toLowerCase().includes(globalSearchQuery.toLowerCase());
 
     const matchesBloodGroup = !filters.bloodGroup || donor.bloodGroup === filters.bloodGroup;
-    const matchesDistrict = !filters.district || donor.location?.district === filters.district;
+    const matchesDistrict = !filters.district || donor.location?.district?.trim().toLowerCase() === filters.district.trim().toLowerCase();
     
     // Simple date match (just checking if they donated on that date for now, or if it's a placeholder)
     const matchesDate = !filters.donationDate || (donor.lastDonationDate && donor.lastDonationDate.startsWith(filters.donationDate));
@@ -3063,6 +3138,23 @@ function LoginView({ t }: { t: any }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleGoogleSignInWrapper = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/popup-closed-by-user' || err.message?.includes('popup')) {
+        setError(t.language === 'Bangla' ? 'গুগল লগইন পপআপ বন্ধ করা হয়েছে অথবা ব্লক করা হয়েছে। অনুগ্রহ করে এই পেজটি নতুন ট্যাবে ওপেন করে আবার চেষ্টা করুন।' : 'Google login popup was closed or blocked. Please open this app in a new tab and try again.');
+      } else {
+        setError(err.message || 'Google login failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -3231,8 +3323,9 @@ function LoginView({ t }: { t: any }) {
           </div>
 
           <button 
-            onClick={signInWithGoogle}
-            className="mt-8 w-full flex items-center justify-center gap-3 bg-white/5 border border-glass-border text-text-primary py-4 rounded-3xl font-bold hover:bg-white/10 transition-all active:scale-95"
+            onClick={handleGoogleSignInWrapper}
+            disabled={loading}
+            className="mt-8 w-full flex items-center justify-center gap-3 bg-white/5 border border-glass-border text-text-primary py-4 rounded-3xl font-bold hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50"
           >
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
             {t.loginWithGoogle}
@@ -3270,23 +3363,21 @@ function NavItem({ icon: Icon, label, active, onClick }: { icon: any, label: str
   );
 }
 
-function MapView({ t, language }: { t: any, language: string }) {
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || "",
-    libraries: ['places'] as any
-  });
+function MapUpdater({ center }: { center: {lat: number, lng: number} }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([center.lat, center.lng]);
+  }, [center, map]);
+  return null;
+}
 
-  const [map, setMap] = useState<google.maps.Map | null>(null);
+function MapView({ t, language }: { t: any, language: string }) {
   const [center, setCenter] = useState({ lat: 23.8103, lng: 90.4125 }); // Dhaka
   const [radius, setRadius] = useState(10); // 10km
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [donors, setDonors] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
-  const [hospitals, setHospitals] = useState<any[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<any>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const [travelInfo, setTravelInfo] = useState<{ distance: string, duration: string } | null>(null);
 
   useEffect(() => {
     // Get current location
@@ -3307,7 +3398,7 @@ function MapView({ t, language }: { t: any, language: string }) {
     }
 
     // Fetch Donors
-    const unsubDonors = onSnapshot(query(collection(db, 'users'), where('role', '==', 'donor'), where('isAvailable', '==', true)), (snap) => {
+    const unsubDonors = onSnapshot(query(collection(db, 'users'), where('role', '==', 'donor')), (snap) => {
       setDonors(snap.docs.map(d => ({ id: d.id, type: 'donor', ...d.data() })));
     });
 
@@ -3322,61 +3413,8 @@ function MapView({ t, language }: { t: any, language: string }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (isLoaded && map && center) {
-      const service = new google.maps.places.PlacesService(map);
-      const request = {
-        location: center,
-        radius: radius * 1000,
-        type: 'hospital'
-      };
-
-      service.nearbySearch(request, (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-          setHospitals(results.map(h => ({
-            id: h.place_id,
-            type: 'hospital',
-            name: h.name,
-            location: h.geometry?.location?.toJSON(),
-            address: h.vicinity,
-            rating: h.rating
-          })));
-        }
-      });
-    }
-  }, [isLoaded, map, center, radius]);
-
-  const calculateRoute = (dest: { lat: number, lng: number }) => {
-    if (!userLocation) return;
-    const directionsService = new google.maps.DirectionsService();
-    directionsService.route(
-      {
-        origin: userLocation,
-        destination: dest,
-        travelMode: google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK) {
-          setDirections(result);
-          const leg = result?.routes[0].legs[0];
-          if (leg) {
-            setTravelInfo({
-              distance: leg.distance?.text || "",
-              duration: leg.duration?.text || ""
-            });
-          }
-        }
-      }
-    );
-  };
-
   const handleMarkerClick = (marker: any) => {
     setSelectedMarker(marker);
-    if (marker.location) {
-      calculateRoute(marker.location);
-    } else if (marker.lat && marker.lng) {
-      calculateRoute({ lat: marker.lat, lng: marker.lng });
-    }
   };
 
   const bloodBanks = [
@@ -3384,232 +3422,165 @@ function MapView({ t, language }: { t: any, language: string }) {
     { id: 'b2', type: 'bank', name: 'Quantum Foundation', location: { lat: 23.7388, lng: 90.4125 }, phone: '02-9351969' },
   ];
 
-  if (!isLoaded) return <div className="flex items-center justify-center h-full">{t.wait}</div>;
-
   return (
-    <div className="relative h-full w-full overflow-hidden">
-      <GoogleMap
-        mapContainerStyle={{ width: '100%', height: '100%' }}
-        center={center}
+    <div className="relative h-full w-full overflow-hidden z-0">
+      <MapContainer
+        center={[center.lat, center.lng]}
         zoom={13}
-        onLoad={setMap}
-        options={{
-          disableDefaultUI: true,
-          styles: [
-            {
-              "featureType": "all",
-              "elementType": "geometry",
-              "stylers": [{"color": "#f5f5f5"}]
-            },
-            {
-              "featureType": "all",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#616161"}]
-            },
-            {
-              "featureType": "all",
-              "elementType": "labels.text.stroke",
-              "stylers": [{"color": "#f5f5f5"}]
-            },
-            {
-              "featureType": "administrative.land_parcel",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#bdbdbd"}]
-            },
-            {
-              "featureType": "poi",
-              "elementType": "geometry",
-              "stylers": [{"color": "#eeeeee"}]
-            },
-            {
-              "featureType": "poi",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#757575"}]
-            },
-            {
-              "featureType": "poi.park",
-              "elementType": "geometry",
-              "stylers": [{"color": "#e5e5e5"}]
-            },
-            {
-              "featureType": "poi.park",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#9e9e9e"}]
-            },
-            {
-              "featureType": "road",
-              "elementType": "geometry",
-              "stylers": [{"color": "#ffffff"}]
-            },
-            {
-              "featureType": "road.arterial",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#757575"}]
-            },
-            {
-              "featureType": "road.highway",
-              "elementType": "geometry",
-              "stylers": [{"color": "#dadada"}]
-            },
-            {
-              "featureType": "road.highway",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#616161"}]
-            },
-            {
-              "featureType": "road.local",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#9e9e9e"}]
-            },
-            {
-              "featureType": "transit.line",
-              "elementType": "geometry",
-              "stylers": [{"color": "#e5e5e5"}]
-            },
-            {
-              "featureType": "transit.station",
-              "elementType": "geometry",
-              "stylers": [{"color": "#eeeeee"}]
-            },
-            {
-              "featureType": "water",
-              "elementType": "geometry",
-              "stylers": [{"color": "#c9c9c9"}]
-            },
-            {
-              "featureType": "water",
-              "elementType": "labels.text.fill",
-              "stylers": [{"color": "#9e9e9e"}]
-            }
-          ]
-        }}
+        style={{ width: '100%', height: '100%', zIndex: 0 }}
+        zoomControl={false}
+        maxBounds={[[20.6, 88.0], [26.6, 92.7]]}
+        minZoom={7}
       >
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        />
+        <MapUpdater center={center} />
+
         {/* User Marker */}
         {userLocation && (
-          <Marker 
-            position={userLocation} 
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: "#3b82f6",
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: "#ffffff",
-            }}
-          />
+          <Marker position={[userLocation.lat, userLocation.lng]} />
         )}
 
         {/* Radius Circle */}
         {userLocation && (
           <Circle
-            center={userLocation}
+            center={[userLocation.lat, userLocation.lng]}
             radius={radius * 1000}
-            options={{
+            pathOptions={{
+              color: '#ef4444',
               fillColor: '#ef4444',
               fillOpacity: 0.1,
-              strokeColor: '#ef4444',
-              strokeOpacity: 0.3,
-              strokeWeight: 1,
+              weight: 1,
             }}
           />
         )}
 
         {/* Donors Markers */}
-        {donors.map(donor => donor.location?.lat && (
-          <OverlayView
-            // @ts-ignore
-            key={donor.id}
-            position={{ lat: donor.location.lat, lng: donor.location.lng }}
-            mapPaneName={"overlayMouseTarget" as any}
-          >
-            <div 
-              onClick={() => handleMarkerClick(donor)}
-              className="relative w-10 h-10 flex items-center justify-center"
-              style={{ transform: 'translate(-50%, -50%)' }}
+        {donors.filter(d => !d.lastDonationDate || (Date.now() - new Date(d.lastDonationDate).getTime()) > 90 * 24 * 60 * 60 * 1000).map(donor => {
+          const bloodGroupColor = {
+            'A+': '#dc2626', 'A-': '#b91c1c',
+            'B+': '#ea580c', 'B-': '#c2410c',
+            'O+': '#2563eb', 'O-': '#1d4ed8',
+            'AB+': '#059669', 'AB-': '#047857'
+          }[donor.bloodGroup] || '#ef4444';
+
+          const lat = donor.location?.latitude ?? donor.location?.lat;
+          const lng = donor.location?.longitude ?? donor.location?.lng;
+          
+          const coords = (lat != null && lng != null) 
+            ? [Number(lat), Number(lng)] as [number, number]
+            : null;
+          
+          if (!coords || isNaN(coords[0]) || isNaN(coords[1])) return null;
+
+          return (
+            <Marker
+              key={donor.id}
+              position={coords}
+              eventHandlers={{ click: () => handleMarkerClick(donor) }}
+              icon={L.divIcon({
+                className: 'custom-leaflet-marker',
+                html: `<div class="relative w-8 h-8 flex flex-col items-center justify-center transition-transform hover:scale-125 duration-300">
+                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, ${bloodGroupColor} 0%, transparent 70%); border-radius: 50%;"></div>
+                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: ${bloodGroupColor}; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); line-height:1;display:flex; border-radius: 50%;">
+                          ${donor.bloodGroup}
+                        </div>
+                      </div>`
+              })}
             >
-              <div className="blood-marker-glow"></div>
-              <div className="blood-marker w-8 h-8">
-                {donor.bloodGroup}
-              </div>
-            </div>
-          </OverlayView>
-        ))}
+              <Popup className="rounded-2xl overflow-hidden shadow-xl">
+                 <div className="p-4 bg-white rounded-2xl w-56">
+                   <h3 className="font-bold text-lg text-gray-900">{donor.fullName}</h3>
+                   <span className="inline-block px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full mb-2">{donor.bloodGroup}</span>
+                   <p className="text-sm text-gray-600 mb-4">{donor.area}, {donor.district}</p>
+                   <button onClick={() => window.open(`tel:${donor.phoneNumber}`)} className="w-full bg-blood-red text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">Call Now</button>
+                 </div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* Requests Markers */}
-        {requests.map(req => req.lat && (
-          <OverlayView
-            // @ts-ignore
-            key={req.id}
-            position={{ lat: req.lat, lng: req.lng }}
-            mapPaneName={"overlayMouseTarget" as any}
-          >
-            <div 
-              onClick={() => handleMarkerClick(req)}
-              className="relative w-10 h-10 flex items-center justify-center"
-              style={{ transform: 'translate(-50%, -50%)' }}
+        {requests.map(req => {
+          const coords = req.location?.latitude && req.location?.longitude
+            ? [Number(req.location.latitude), Number(req.location.longitude)] as [number, number]
+            : (req.lat && req.lng) 
+              ? [Number(req.lat), Number(req.lng)] as [number, number]
+              : null;
+
+          if (!coords) return null;
+
+          return (
+            <Marker
+              key={req.id}
+              position={coords}
+              eventHandlers={{ click: () => handleMarkerClick(req) }}
+              icon={L.divIcon({
+                className: 'custom-leaflet-marker',
+                html: `<div class="relative w-8 h-8 flex flex-col items-center justify-center transition-transform hover:scale-125 duration-300">
+                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, #f59e0b 0%, transparent 70%); border-radius: 50%;"></div>
+                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: #f59e0b; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); line-height:1;display:flex; border-radius: 50%;">
+                          ${req.bloodGroup}
+                        </div>
+                      </div>`
+              })}
             >
-              <div className="blood-marker-glow" style={{ background: 'radial-gradient(circle, rgba(249, 115, 22, 0.4) 0%, transparent 70%)' }}></div>
-              <div className="blood-marker w-8 h-8" style={{ background: '#f97316', boxShadow: '0 0 15px rgba(249, 115, 22, 0.6)' }}>
-                {req.bloodGroup}
-              </div>
-            </div>
-          </OverlayView>
-        ))}
+               <Popup className="rounded-2xl overflow-hidden shadow-xl">
+                 <div className="p-4 bg-white rounded-2xl w-56">
+                   <h3 className="font-bold text-lg text-gray-900">Request: {req.bloodGroup}</h3>
+                   <p className="text-sm text-gray-600 mb-4">{req.area}, {req.district}</p>
+                   <button onClick={() => handleMarkerClick(req)} className="w-full bg-orange-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-orange-600 transition-colors">Request Blood</button>
+                 </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+
+        {/* Requests Markers */}
+        {requests.map(req => {
+          const coords = req.location?.latitude && req.location?.longitude
+            ? [Number(req.location.latitude), Number(req.location.longitude)] as [number, number]
+            : req.lat && req.lng 
+              ? [Number(req.lat), Number(req.lng)] as [number, number]
+              : null;
+
+          if (!coords) return null;
+
+          return (
+            <Marker
+              key={req.id}
+              position={coords}
+              eventHandlers={{ click: () => handleMarkerClick(req) }}
+              icon={L.divIcon({
+                className: 'custom-leaflet-marker',
+                html: `<div class="relative w-8 h-8 flex flex-col items-center justify-center">
+                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, transparent 70%); border-radius: 50%;"></div>
+                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.6); line-height:1;display:flex; border-radius: 50%;">
+                          ${req.bloodGroup}
+                        </div>
+                      </div>`
+              })}
+            />
+          );
+        })}
 
         {/* Blood Banks Markers */}
         {bloodBanks.map(bank => (
           <Marker
             key={bank.id}
-            position={bank.location}
-            onClick={() => handleMarkerClick(bank)}
-            icon={{
-              path: "M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z",
-              fillColor: "#3b82f6",
-              fillOpacity: 1,
-              strokeWeight: 1,
-              strokeColor: "#ffffff",
-              scale: 1.2,
-              anchor: new google.maps.Point(12, 12)
-            }}
+            position={[bank.location.lat, bank.location.lng]}
+            eventHandlers={{ click: () => handleMarkerClick(bank) }}
           />
         ))}
-
-        {/* Hospitals Markers */}
-        {hospitals.map(h => (
-          <Marker
-            key={h.id}
-            position={h.location}
-            onClick={() => handleMarkerClick(h)}
-            icon={{
-              path: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z",
-              fillColor: "#22c55e",
-              fillOpacity: 1,
-              strokeWeight: 1,
-              strokeColor: "#ffffff",
-              scale: 1.2,
-              anchor: new google.maps.Point(12, 12)
-            }}
-          />
-        ))}
-
-        {directions && (
-          <DirectionsRenderer
-            directions={directions}
-            options={{
-              suppressMarkers: true,
-              polylineOptions: {
-                strokeColor: '#ef4444',
-                strokeWeight: 4,
-              }
-            }}
-          />
-        )}
-      </GoogleMap>
+      </MapContainer>
 
       {/* Controls Overlay */}
-      <div className="absolute top-4 left-4 right-4 flex flex-col gap-4 pointer-events-none">
+      <div className="absolute top-4 left-4 right-4 flex flex-col gap-4 pointer-events-none z-[1000]">
         <div className="flex justify-between items-start">
-          <div className="glass-card p-4 rounded-2xl pointer-events-auto w-64">
+          <div className="glass-card p-4 rounded-2xl pointer-events-auto w-64 bg-white/90 backdrop-blur-md shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-text-secondary uppercase">{t.radius}</span>
               <span className="text-xs font-bold text-blood-red">{radius} {t.km}</span>
@@ -3620,7 +3591,7 @@ function MapView({ t, language }: { t: any, language: string }) {
               max="100" 
               value={radius} 
               onChange={(e) => setRadius(parseInt(e.target.value))}
-              className="w-full accent-blood-red h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              className="w-full accent-blood-red h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
             />
           </div>
 
@@ -3635,7 +3606,7 @@ function MapView({ t, language }: { t: any, language: string }) {
                   });
                 }
               }}
-              className="p-3 bg-bg-dark border border-glass-border rounded-xl shadow-lg hover:bg-white/5 transition-all text-text-primary"
+              className="p-3 bg-white border border-gray-100 rounded-xl shadow-lg hover:bg-gray-50 transition-all text-gray-700"
             >
               <Locate className="w-5 h-5" />
             </button>
@@ -3650,7 +3621,7 @@ function MapView({ t, language }: { t: any, language: string }) {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white rounded-[32px] p-8 shadow-2xl z-50 border border-gray-100"
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white rounded-[32px] p-8 shadow-2xl z-[1000] border border-gray-100"
           >
             <button 
               onClick={() => setSelectedMarker(null)}
@@ -3660,15 +3631,15 @@ function MapView({ t, language }: { t: any, language: string }) {
             </button>
             
             <div className="flex items-center gap-6 mb-6">
-              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center text-blood-red font-bold text-2xl border-4 border-white shadow-lg">
-                {selectedMarker.bloodGroup}
+              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center text-blood-red font-bold text-2xl border-4 border-white shadow-lg shrink-0">
+                {selectedMarker.bloodGroup || '🏥'}
               </div>
               <div>
-                <h3 className="text-2xl font-bold text-gray-900">{selectedMarker.name || selectedMarker.patient}</h3>
-                <p className="text-sm text-gray-500 font-medium">
+                <h3 className="text-2xl font-bold text-gray-900">{selectedMarker.name || selectedMarker.patient || selectedMarker.donorName}</h3>
+                <p className="text-sm text-gray-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis w-40">
                   {selectedMarker.type === 'donor' ? (language === 'Bangla' ? 'ভেরিফাইড রক্তদাতা' : 'Verified Blood Donor') : 
                    selectedMarker.type === 'request' ? (language === 'Bangla' ? 'জরুরী রক্তের প্রয়োজন' : 'Emergency Blood Needed') : 
-                   selectedMarker.type === 'hospital' ? (language === 'Bangla' ? 'হাসপাতাল' : 'Hospital') : (language === 'Bangla' ? 'রক্ত ব্যাংক' : 'Blood Bank')}
+                   selectedMarker.type === 'bank' ? (language === 'Bangla' ? 'রক্ত ব্যাংক' : 'Blood Bank') : ''}
                 </p>
               </div>
             </div>
@@ -3679,7 +3650,7 @@ function MapView({ t, language }: { t: any, language: string }) {
                   <MapPin className="w-5 h-5 text-blood-red" />
                 </div>
                 <span className="font-medium text-lg">
-                  {selectedMarker.location?.area || selectedMarker.location?.district || selectedMarker.location || 'Dhaka'}
+                  {selectedMarker.location?.area || selectedMarker.location?.district || selectedMarker.location || selectedMarker.address || 'Dhaka'}
                 </span>
               </div>
               <div className="flex items-center gap-4 text-gray-700">
@@ -3687,7 +3658,7 @@ function MapView({ t, language }: { t: any, language: string }) {
                   <Activity className="w-5 h-5 text-blue-500" />
                 </div>
                 <span className="font-medium text-lg">
-                  {selectedMarker.isAvailable !== false ? (language === 'Bangla' ? 'রক্তদানে প্রস্তুত' : 'Ready to Donate') : (language === 'Bangla' ? 'এখন প্রস্তুত নয়' : 'Not Available')}
+                  {selectedMarker.isAvailable !== false ? (language === 'Bangla' ? 'রক্তদানে প্রস্তুত' : 'Ready to Donate') : (language === 'Bangla' ? 'এখন প্রস্তুত নয়' : 'Not Available')}
                 </span>
               </div>
             </div>
@@ -3696,8 +3667,7 @@ function MapView({ t, language }: { t: any, language: string }) {
               <button 
                 onClick={() => {
                   if (selectedMarker.phone) window.location.href = `tel:${selectedMarker.phone}`;
-                  // @ts-ignore
-                  else window.showToast('Contact info not available', 'error');
+                  else alert(language === 'Bangla' ? 'যোগাযোগের তথ্য পাওয়া যায়নি' : 'Contact info not available');
                 }}
                 className="flex-1 bg-[#0f172a] text-[#0ea5e9] py-4 rounded-2xl font-bold text-lg hover:bg-[#1e293b] transition-all shadow-xl shadow-blue-900/10"
               >
@@ -3707,11 +3677,12 @@ function MapView({ t, language }: { t: any, language: string }) {
                 <button 
                   onClick={async () => {
                     try {
-                      await updateDoc(doc(db, 'requests', selectedMarker.id), { status: 'accepted' });
                       // @ts-ignore
-                      window.showToast(language === 'Bangla' ? 'অনুরোধ গ্রহণ করা হয়েছে!' : 'Request accepted!');
+                      await updateDoc(doc(db, 'requests', selectedMarker.id), { status: 'accepted' });
+                      alert(language === 'Bangla' ? 'অনুরোধ গ্রহণ করা হয়েছে!' : 'Request accepted!');
+                      setSelectedMarker(null);
                     } catch (err) {
-                      handleFirestoreError(err, OperationType.UPDATE, 'requests');
+                      console.error(err);
                     }
                   }}
                   className="flex-1 bg-blood-red text-white py-4 rounded-2xl font-bold text-lg hover:bg-red-700 transition-all shadow-xl shadow-red-900/40"
@@ -4647,10 +4618,23 @@ function NotificationsView({ t, setActiveTab, setProfileUid }: { t: any, setActi
                   {n.type === 'request' && n.relatedId && (
                     <button 
                       onClick={async () => {
-                        const reqDoc = await getDoc(doc(db, 'direct_requests', n.relatedId));
-                        if(reqDoc.exists()) {
-                            setProfileUid(reqDoc.data().requesterId);
-                            setActiveTab('profile');
+                        if (n.relatedId === 'requests') {
+                          setActiveTab('requests');
+                        } else {
+                          try {
+                            const reqDoc = await getDoc(doc(db, 'direct_requests', n.relatedId));
+                            if(reqDoc.exists()) {
+                                setProfileUid(reqDoc.data().requesterId);
+                                setActiveTab('profile');
+                            } else {
+                                // Fallback if direct request not found, maybe it was deleted
+                                // or it's a general request that didn't use 'requests' as relatedId
+                                setActiveTab('requests');
+                            }
+                          } catch (err) {
+                            console.error("Error fetching related request:", err);
+                            setActiveTab('requests'); // Safe fallback
+                          }
                         }
                       }}
                       className="text-[10px] font-bold text-blue-400 uppercase tracking-wider hover:underline"
