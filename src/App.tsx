@@ -3504,6 +3504,13 @@ function MapView({ t, language }: { t: any, language: string }) {
 
         {/* Requests Markers */}
         {requests.map(req => {
+          const bloodGroupColor = {
+            'A+': '#dc2626', 'A-': '#b91c1c',
+            'B+': '#ea580c', 'B-': '#c2410c',
+            'O+': '#2563eb', 'O-': '#1d4ed8',
+            'AB+': '#059669', 'AB-': '#047857'
+          }[req.bloodGroup] || '#f59e0b';
+
           const coords = req.location?.latitude && req.location?.longitude
             ? [Number(req.location.latitude), Number(req.location.longitude)] as [number, number]
             : (req.lat && req.lng) 
@@ -3520,8 +3527,8 @@ function MapView({ t, language }: { t: any, language: string }) {
               icon={L.divIcon({
                 className: 'custom-leaflet-marker',
                 html: `<div class="relative w-8 h-8 flex flex-col items-center justify-center transition-transform hover:scale-125 duration-300">
-                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, #f59e0b 0%, transparent 70%); border-radius: 50%;"></div>
-                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: #f59e0b; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); line-height:1;display:flex; border-radius: 50%;">
+                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, ${bloodGroupColor} 0%, transparent 70%); border-radius: 50%;"></div>
+                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: ${bloodGroupColor}; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); line-height:1;display:flex; border-radius: 50%;">
                           ${req.bloodGroup}
                         </div>
                       </div>`
@@ -3539,33 +3546,6 @@ function MapView({ t, language }: { t: any, language: string }) {
         })}
 
 
-        {/* Requests Markers */}
-        {requests.map(req => {
-          const coords = req.location?.latitude && req.location?.longitude
-            ? [Number(req.location.latitude), Number(req.location.longitude)] as [number, number]
-            : req.lat && req.lng 
-              ? [Number(req.lat), Number(req.lng)] as [number, number]
-              : null;
-
-          if (!coords) return null;
-
-          return (
-            <Marker
-              key={req.id}
-              position={coords}
-              eventHandlers={{ click: () => handleMarkerClick(req) }}
-              icon={L.divIcon({
-                className: 'custom-leaflet-marker',
-                html: `<div class="relative w-8 h-8 flex flex-col items-center justify-center">
-                        <div class="blood-marker-glow" style="position:absolute; width:100%; height:100%; background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, transparent 70%); border-radius: 50%;"></div>
-                        <div class="blood-marker w-6 h-6 flex items-center justify-center text-[10px] m-0 mx-auto text-white font-bold" style="background: #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.6); line-height:1;display:flex; border-radius: 50%;">
-                          ${req.bloodGroup}
-                        </div>
-                      </div>`
-              })}
-            />
-          );
-        })}
 
         {/* Blood Banks Markers */}
         {bloodBanks.map(bank => (
